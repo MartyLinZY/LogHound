@@ -10,55 +10,57 @@ import com.github.javaparser.symbolsolver.JavaSymbolSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeSolver;
-import guru.nidi.graphviz.attribute.Color;
-import guru.nidi.graphviz.attribute.Style;
-import guru.nidi.graphviz.engine.Format;
-import guru.nidi.graphviz.engine.Graphviz;
-import guru.nidi.graphviz.model.MutableGraph;
-import guru.nidi.graphviz.model.MutableNode;
+import io.github.martylinzy.AST.MethodCallInfo;
+import io.github.martylinzy.AST.MethodInfo;
+import io.github.martylinzy.graph.MethodCallGraphPrinter;
+
+import org.apache.log4j.Logger;
 import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import static guru.nidi.graphviz.model.Factory.mutGraph;
-import static guru.nidi.graphviz.model.Factory.mutNode;
+
 
 /**
- * 遍历指定Java项目的所有Java文件，解析每个文件中的方法和方法调用关系。
- * 将文件与方法的映射关系存储在fileMethodMap中，将方法调用关系存储在methodCallMap中。
- * 打印文件-方法映射关系和方法调用关系。
- * 生成方法调用图，将调用关系可视化展示。
+ * Iterate through all the Java files of a given Java project.
+ * Parse the methods and method call relationships in each file.
+ * Store the mapping relationship between files and methods in fileMethodMap and the method call relationship in methodCallMap.
+ * Print mapping relationship between files-methods and the method call
+ * Generate Method call graph and give visualization presentation.
  */
 public class JavaMethodCallAnalyzer {
 
-    // 存储文件与方法的映射关系
+    // Store the mapping of files to methods
     private Map<String, List<MethodInfo>> fileMethodMap = new HashMap<>();
-    // 存储方法调用的映射关系
+    // Store the mapping relationships for method calls
     private Map<String, List<MethodCallInfo>> methodCallMap = new HashMap<>();
 
     /**
-     * 分析整个Java项目
-     * @param projectPath 项目路径
+     * Analyse whole java project
+     * @param projectPath project path
      */
     public void analyzeProject(String projectPath) {
-        // 创建符号解析器
+        // build symbol solver for project
+
         CombinedTypeSolver typeSolver = new CombinedTypeSolver();
         typeSolver.add(new ReflectionTypeSolver());
         typeSolver.add(new JavaParserTypeSolver(new File(projectPath)));
         JavaSymbolSolver symbolSolver = new JavaSymbolSolver(typeSolver);
         StaticJavaParser.getConfiguration().setSymbolResolver(symbolSolver);
 
+        // workflow
         analyzeDirectory(new File(projectPath));
         printFileMethodMap();
-        printMethodCallMap();
-        generateCallGraph(projectPath);
+
+        MethodCallGraphPrinter graphprinter=new MethodCallGraphPrinter(fileMethodMap,methodCallMap);
+        graphprinter.printFileMethodMap();
+        graphprinter.generateCallGraph(projectPath);
     }
 
     /**
-     * 递归分析目录下的Java文件
-     * @param dir 目录
+     * Iterate through files under the path
+     * @param dir Directory
      */
     private void analyzeDirectory(File dir) {
         for (File file : dir.listFiles()) {
@@ -71,8 +73,8 @@ public class JavaMethodCallAnalyzer {
     }
 
     /**
-     * 分析单个Java文件
-     * @param file Java文件
+     * Analyse single Java file
+     * @param file Java file path
      */
     private void analyzeJavaFile(File file) {
         try {
@@ -96,6 +98,7 @@ public class JavaMethodCallAnalyzer {
                                 new MethodCallInfo(calledClassName, calledMethodName, calledPackageName));
                     } catch (Exception e) {
                         System.err.println("Error resolving method call: " + methodCall.toString());
+                        e.printStackTrace();
                     }
                 });
             });
@@ -131,76 +134,16 @@ public class JavaMethodCallAnalyzer {
      */
     private void printFileMethodMap() {
         System.out.println("Methods by File:");
+        String projectPath = "src/main/resources/hadoop-2.6.0-src/hadoop-common-project/hadoop-common/src/main/java/";
         fileMethodMap.forEach((fileName, methodInfos) -> {
+            fileName=fileName.replace(projectPath,"");
             System.out.println(fileName + ":");
             methodInfos.forEach(methodInfo ->
                     System.out.println("  " + methodInfo.className + "." + methodInfo.methodName)
             );
         });
     }
-    /**
-     * 打印方法调用映射
-     */
-    private void printMethodCallMap() {
-        System.out.println("\nMethod Call Relations:");
-        methodCallMap.forEach((caller, callInfos) -> {
-            System.out.println(caller + " calls:");
-            callInfos.forEach(callInfo -> System.out.println("  " +
-                    callInfo.packageName + "." + callInfo.className + "." + callInfo.methodName));
-        });
-    }
-    /**
-     * 生成方法调用图
-     * @param projectPath 项目路径
-     */
-    private void generateCallGraph(String projectPath) {
-        MutableGraph graph = mutGraph("Method Call Graph").setDirected(true);
-        Map<String, MutableNode> nodeMap = new HashMap<>();
 
-        methodCallMap.forEach((caller, callInfos) -> {
-            MutableNode callerNode = nodeMap.computeIfAbsent(caller, k -> mutNode(caller).add(Color.BLACK, Style.FILLED));
-
-            callInfos.forEach(callInfo -> {
-                String callee = callInfo.packageName + "." + callInfo.className + "." + callInfo.methodName;
-                MutableNode calleeNode = nodeMap.computeIfAbsent(callee, k -> mutNode(callee));
-                graph.add(callerNode.addLink(calleeNode));
-            });
-        });
-
-        String outputPath = projectPath + "/method_call_graph.png";
-        try {
-            Graphviz.fromGraph(graph).width(1200).render(Format.PNG).toFile(new File(outputPath));
-            System.out.println("\nMethod call graph generated at: " + outputPath);
-        } catch (IOException e) {
-            System.err.println("Error generating method call graph: " + e.getMessage());
-        }
-    }
-    /**
-     * 方法信息类
-     */
-    private static class MethodInfo {
-        String className;
-        String methodName;
-
-        MethodInfo(String className, String methodName) {
-            this.className = className;
-            this.methodName = methodName;
-        }
-    }
-    /**
-     * 方法调用信息类
-     */
-    private static class MethodCallInfo {
-        String className;
-        String methodName;
-        String packageName;
-
-        MethodCallInfo(String className, String methodName, String packageName) {
-            this.className = className;
-            this.methodName = methodName;
-            this.packageName = packageName;
-        }
-    }
     public static void main(String[] args) {
         String projectPath = "src/main/resources/hadoop-2.6.0-src/hadoop-common-project/hadoop-common/src/main/java/";
         JavaMethodCallAnalyzer analyzer = new JavaMethodCallAnalyzer();
