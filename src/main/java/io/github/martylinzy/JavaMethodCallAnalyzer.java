@@ -14,12 +14,17 @@ import io.github.martylinzy.AST.MethodCallInfo;
 import io.github.martylinzy.AST.MethodInfo;
 import io.github.martylinzy.graph.MethodCallGraphPrinter;
 
-import org.apache.log4j.Logger;
+import org.slf4j.*;
 import java.io.File;
+import java.util.*;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 
 /**
@@ -27,10 +32,9 @@ import java.util.Map;
  * Parse the methods and method call relationships in each file.
  * Store the mapping relationship between files and methods in fileMethodMap and the method call relationship in methodCallMap.
  * Print mapping relationship between files-methods and the method call
- * Generate Method call graph and give visualization presentation.
- */
+ * Generate Method call graph and give visualization presentation.*/
 public class JavaMethodCallAnalyzer {
-
+    Logger log=LoggerFactory.getLogger(JavaMethodCallAnalyzer.class);
     // Store the mapping of files to methods
     private Map<String, List<MethodInfo>> fileMethodMap = new HashMap<>();
     // Store the mapping relationships for method calls
@@ -53,9 +57,23 @@ public class JavaMethodCallAnalyzer {
         analyzeDirectory(new File(projectPath));
         printFileMethodMap();
 
+        //print maps
+
+        for (Map.Entry<String, List<MethodCallInfo>> entry : methodCallMap.entrySet()) {
+            List<MethodCallInfo> methodCallList = entry.getValue();
+            // 使用 Set 去重，并筛选以 "org.apache.hadoop." 开头的元素
+            Set<MethodCallInfo> filteredMethodCallSet = methodCallList.stream()
+                    .filter(methodCallInfo -> methodCallInfo.packageName.startsWith("org.apache.hadoop."))
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+
+            // 将筛选和去重后的结果转换回 List，并更新 Map 中的值
+            entry.setValue(new ArrayList<>(filteredMethodCallSet));
+        }
+
         MethodCallGraphPrinter graphprinter=new MethodCallGraphPrinter(fileMethodMap,methodCallMap);
         graphprinter.printFileMethodMap();
-        graphprinter.generateCallGraph(projectPath);
+        graphprinter.printMethodCallMap();
+//        graphprinter.generateCallGraph(projectPath);
     }
 
     /**
@@ -97,8 +115,8 @@ public class JavaMethodCallAnalyzer {
                         addMethodCall(className + "." + methodName,
                                 new MethodCallInfo(calledClassName, calledMethodName, calledPackageName));
                     } catch (Exception e) {
-                        System.err.println("Error resolving method call: " + methodCall.toString());
-                        e.printStackTrace();
+                        //System.err.println("Error resolving method call: " + methodCall.toString());
+                        log.error(e.getLocalizedMessage());
                     }
                 });
             });
@@ -132,19 +150,39 @@ public class JavaMethodCallAnalyzer {
     /**
      * 打印文件-方法映射
      */
+//    private void printFileMethodMap() {
+//        System.out.println("Methods by File:");
+//        String projectPath = "src/main/resources/hadoop-2.6.0-src/hadoop-common-project/hadoop-common/src/main/java/";
+//        fileMethodMap.forEach((fileName, methodInfos) -> {
+//            System.out.println( fileName.replace(projectPath,"") + ":");
+//            methodInfos.forEach(methodInfo ->
+//                    System.out.println("  " + methodInfo.className + "." + methodInfo.methodName)
+//            );
+//        });
+//    }
     private void printFileMethodMap() {
-        System.out.println("Methods by File:");
-        String projectPath = "src/main/resources/hadoop-2.6.0-src/hadoop-common-project/hadoop-common/src/main/java/";
-        fileMethodMap.forEach((fileName, methodInfos) -> {
-            fileName=fileName.replace(projectPath,"");
-            System.out.println(fileName + ":");
-            methodInfos.forEach(methodInfo ->
-                    System.out.println("  " + methodInfo.className + "." + methodInfo.methodName)
-            );
-        });
-    }
+        String outputFileName = "method_map.txt";
 
+        try (PrintWriter writer = new PrintWriter(new FileWriter(outputFileName))) {
+            writer.println("Methods by File:");
+
+            String projectPath = "src/main/resources/hadoop-2.6.0-src/hadoop-common-project/hadoop-common/src/main/java/";
+
+            fileMethodMap.forEach((fileName, methodInfos) -> {
+                writer.println(fileName.replace(projectPath, "") + ":");
+
+                methodInfos.forEach(methodInfo ->
+                        writer.println(" " + methodInfo.className + "." + methodInfo.methodName)
+                );
+            });
+
+            System.out.println("Method map written to " + outputFileName);
+        } catch (IOException e) {
+            System.err.println("Error writing method map to file: " + e.getMessage());
+        }
+    }
     public static void main(String[] args) {
+
         String projectPath = "src/main/resources/hadoop-2.6.0-src/hadoop-common-project/hadoop-common/src/main/java/";
         JavaMethodCallAnalyzer analyzer = new JavaMethodCallAnalyzer();
         analyzer.analyzeProject(projectPath);

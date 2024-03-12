@@ -4,3 +4,7 @@
 .idea
 .gitignore
 application_log
+/src/main/resources/application_log/
+/src/main/resources/logs/LogHound/
+/example/
+/method_map.txt
